@@ -1,0 +1,1 @@
+"""Party Wishlist FastAPI application."""
