@@ -114,3 +114,7 @@ def old_unreserve(gid:int,u:User=Depends(current_user),db:Session=Depends(get_se
 def health(): return {"ok":True}
 @app.get("/")
 def index(): return FileResponse(PUBLIC/"index.html")
+
+# Keep this mount last: FastAPI resolves the API and health routes above first,
+# while the browser can load the existing root-relative /app.js and /style.css.
+app.mount("/", StaticFiles(directory=PUBLIC, html=True), name="frontend")
