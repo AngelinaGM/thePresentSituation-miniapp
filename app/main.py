@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -26,6 +26,12 @@ class GiftPayload(BaseModel):
     url: HttpUrl | None = None
     price: str | None = Field(None, max_length=60)
     note: str | None = Field(None, max_length=500)
+
+    @field_validator("url", "price", "note", mode="before")
+    @classmethod
+    def blank_optional_fields_are_none(cls, value):
+        """HTML forms send blank optional controls as empty strings."""
+        return None if isinstance(value, str) and not value.strip() else value
 
 @app.exception_handler(HTTPException)
 async def errors(_, exc): return JSONResponse({"error": exc.detail}, exc.status_code)
