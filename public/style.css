@@ -11,12 +11,12 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--cream); color: var(--text); font: 16px system-ui, -apple-system, sans-serif; }
+body { margin: 0; background: #fff; color: var(--text); font: 16px system-ui, -apple-system, sans-serif; }
 main { max-width: 680px; margin: auto; padding: 20px 16px 48px; }
 h1 { font-size: 26px; margin: 4px 0 8px; }
 h2 { font-size: 19px; margin: 0 0 12px; }
 .sub, .empty { color: var(--muted); line-height: 1.45; }
-.card { background: #fffdf9; border-radius: 16px; padding: 15px; margin: 12px 0; box-shadow: 0 4px 18px rgba(21, 95, 92, .07); }
+.card { background: var(--cream); border-radius: 16px; padding: 15px; margin: 12px 0; box-shadow: 0 4px 18px rgba(21, 95, 92, .07); }
 .gift { display: flex; gap: 10px; align-items: flex-start; }
 .gift-main { flex: 1; }
 .gift-title { font-weight: 650; }
@@ -25,7 +25,7 @@ button { border: 0; border-radius: 11px; background: var(--tiffany); color: var(
 button.secondary { background: transparent; color: var(--teal); padding: 5px; }
 button.danger { color: #b55a62; background: transparent; padding: 5px; }
 form { display: grid; gap: 9px; }
-input, textarea { border: 1px solid var(--border); border-radius: 10px; background: var(--cream); color: var(--text); padding: 11px; font: inherit; width: 100%; }
+input, textarea { border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--text); padding: 11px; font: inherit; width: 100%; }
 input::placeholder, textarea::placeholder { color: var(--sage); opacity: 1; }
 textarea { min-height: 76px; resize: vertical; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
