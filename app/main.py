@@ -58,7 +58,7 @@ def current_user(authorization: str|None=Header(None), db: Session=Depends(get_s
         data=json.loads(b64d(payload)); assert data["exp"]>time.time()
         user=db.scalar(select(User).where(User.telegram_id==data["telegram_id"])); assert user
         return user
-    except Exception: fail(401,"Нужно открыть приложение через Telegram.")
+    except Exception: fail(401, "Open the app through Telegram.")
 def gift_out(g, mine=False):
     v={"id":g.id,"title":g.title,"url":g.product_url,"price":g.price_note,"note":g.comment}
     if mine: v["reservedByMe"]=True
@@ -79,38 +79,38 @@ def mine(u: User=Depends(current_user),db: Session=Depends(get_session),s: Setti
 @app.post("/api/wishlists",status_code=201)
 def create(p: WishlistPayload,u: User=Depends(current_user),db: Session=Depends(get_session),s: Settings=Depends(get_settings)):
     w=Wishlist(owner_id=u.id,title=p.title.strip(),party_at=p.party_at,invite_token=secrets.token_urlsafe(24));
-    if not w.title: fail(400,"Введите название до 100 символов.")
+    if not w.title: fail(400, "Enter a title of up to 100 characters.")
     db.add(w); db.commit(); db.refresh(w); return owner_out(w,s)
 @app.post("/api/wishlists/{wid}/gifts",status_code=201)
 def add(wid:int,p: GiftPayload,u:User=Depends(current_user),db:Session=Depends(get_session)):
     w=db.scalar(select(Wishlist).where(Wishlist.id==wid,Wishlist.owner_id==u.id))
-    if not w: fail(404,"Список не найден.")
-    if w.status != WishlistStatus.ACTIVE: fail(409,"Этот вишлист недоступен для изменений.")
+    if not w: fail(404, "Wishlist not found.")
+    if w.status != WishlistStatus.ACTIVE: fail(409, "This wishlist cannot be changed.")
     g=Gift(wishlist_id=wid,title=p.title.strip(),product_url=str(p.url) if p.url else None,price_note=p.price,comment=p.note); db.add(g); db.commit(); db.refresh(g); return gift_out(g)
 @app.delete("/api/gifts/{gid}",status_code=204)
 def remove(gid:int,u:User=Depends(current_user),db:Session=Depends(get_session)):
     g=db.scalar(select(Gift).where(Gift.id==gid).options(selectinload(Gift.wishlist)))
-    if not g or g.wishlist.owner_id!=u.id: fail(404,"Подарок не найден.")
-    if g.wishlist.status!=WishlistStatus.ACTIVE: fail(409,"Этот вишлист недоступен для изменений.")
+    if not g or g.wishlist.owner_id!=u.id: fail(404, "Gift not found.")
+    if g.wishlist.status!=WishlistStatus.ACTIVE: fail(409, "This wishlist cannot be changed.")
     g.deleted_at=datetime.now(timezone.utc); db.commit()
 @app.get("/api/invites/{token}")
 def invite(token:str,u:User=Depends(current_user),db:Session=Depends(get_session),s:Settings=Depends(get_settings)):
     w=db.scalar(select(Wishlist).where(Wishlist.invite_token==token).options(selectinload(Wishlist.gifts).selectinload(Gift.reservation)))
-    if not w: fail(404,"Приглашение не найдено.")
+    if not w: fail(404, "Invite not found.")
     if w.owner_id==u.id: return {"isOwner":True,"list":owner_out(w,s)}
     gifts=[gift_out(g,g.reservation is not None and g.reservation.guest_id==u.id) for g in w.gifts if not g.deleted_at and (not g.reservation or g.reservation.guest_id==u.id)]
     return {"isOwner":False,"list":{"id":w.id,"title":w.title,"status":w.status.value,"partyAt":w.party_at.isoformat() if w.party_at else None,"gifts":gifts}}
 @app.post("/api/gifts/{gid}/reserve",status_code=201)
 def reserve(gid:int,u:User=Depends(current_user),db:Session=Depends(get_session)):
     g=db.scalar(select(Gift).where(Gift.id==gid).options(selectinload(Gift.wishlist)))
-    if not g or g.deleted_at or g.wishlist.owner_id==u.id or g.wishlist.status!=WishlistStatus.ACTIVE: fail(404,"Подарок недоступен.")
+    if not g or g.deleted_at or g.wishlist.owner_id==u.id or g.wishlist.status!=WishlistStatus.ACTIVE: fail(404, "Gift is unavailable.")
     db.add(Reservation(gift_id=gid,guest_id=u.id))
     try: db.commit()
-    except IntegrityError: db.rollback(); fail(409,"Этот подарок уже выбрал другой гость.")
+    except IntegrityError: db.rollback(); fail(409, "Another guest has already selected this gift.")
     return {"ok":True}
 def cancel(gid,u,db):
     r=db.scalar(select(Reservation).where(Reservation.gift_id==gid,Reservation.guest_id==u.id))
-    if not r: fail(404,"Ваша бронь не найдена.")
+    if not r: fail(404, "Your reservation was not found.")
     db.delete(r); db.commit()
 @app.delete("/api/gifts/{gid}/reservation",status_code=204)
 def unreserve(gid:int,u:User=Depends(current_user),db:Session=Depends(get_session)): cancel(gid,u,db)
