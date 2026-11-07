@@ -1,7 +1,9 @@
-import base64, hashlib, hmac, json, secrets, time
+import asyncio, base64, hashlib, hmac, json, logging, secrets, time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,7 +18,53 @@ from app.db import get_session
 from app.models import Gift, Reservation, User, Wishlist, WishlistStatus
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
-app = FastAPI(title="Party Wishlist")
+logger = logging.getLogger(__name__)
+
+
+def telegram_api(method: str, payload: dict, settings: Settings) -> None:
+    request = UrlRequest(
+        f"https://api.telegram.org/bot{settings.bot_token}/{method}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=10) as response:
+        if not 200 <= response.status < 300:
+            raise RuntimeError(f"Telegram {method} returned HTTP {response.status}")
+
+
+async def configure_telegram_webhook() -> None:
+    settings = get_settings()
+    if not (settings.bot_token and settings.app_url and settings.telegram_webhook_secret):
+        logger.warning("Telegram webhook was not configured: required settings are missing.")
+        return
+    await asyncio.to_thread(
+        telegram_api,
+        "setWebhook",
+        {
+            "url": f"{settings.app_url.rstrip('/')}/telegram/webhook",
+            "secret_token": settings.telegram_webhook_secret,
+        },
+        settings,
+    )
+    await asyncio.to_thread(
+        telegram_api,
+        "setMyCommands",
+        {"commands": [{"command": "start", "description": "Open The Present Situation"}]},
+        settings,
+    )
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    try:
+        await configure_telegram_webhook()
+    except Exception:
+        logger.exception("Telegram webhook configuration failed.")
+    yield
+
+
+app = FastAPI(title="Party Wishlist", lifespan=lifespan)
 app.mount("/public", StaticFiles(directory=PUBLIC), name="public")
 
 class AuthPayload(BaseModel): initData: str
@@ -66,6 +114,44 @@ def gift_out(g, mine=False):
 def owner_out(w, s):
     bot=s.bot_username.removeprefix("@")
     return {"id":w.id,"title":w.title,"status":w.status.value,"partyAt":w.party_at.isoformat() if w.party_at else None,"inviteToken":w.invite_token,"inviteUrl":f"https://t.me/{bot}?startapp={w.invite_token}" if bot else "","gifts":[gift_out(g) for g in w.gifts if not g.deleted_at]}
+
+@app.post("/telegram/webhook", include_in_schema=False)
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+):
+    if not settings.telegram_webhook_secret:
+        fail(503, "Telegram webhook is not configured.")
+    if not x_telegram_bot_api_secret_token or not hmac.compare_digest(
+        x_telegram_bot_api_secret_token, settings.telegram_webhook_secret
+    ):
+        fail(403, "Invalid Telegram webhook secret.")
+    try:
+        update = await request.json()
+    except json.JSONDecodeError:
+        fail(400, "Invalid Telegram update.")
+    message = update.get("message") if isinstance(update, dict) else None
+    chat = message.get("chat") if isinstance(message, dict) else None
+    text = message.get("text", "") if isinstance(message, dict) else ""
+    command = text.strip().split(maxsplit=1)[0].split("@", 1)[0] if text else ""
+    if command != "/start" or not isinstance(chat, dict) or chat.get("type") != "private":
+        return {"ok": True}
+    await asyncio.to_thread(
+        telegram_api,
+        "sendMessage",
+        {
+            "chat_id": chat["id"],
+            "text": "Welcome to The Present Situation.\n\nCreate a wishlist, add gifts, and share it with your guests.",
+            "reply_markup": {
+                "keyboard": [[{"text": "Open The Present Situation", "web_app": {"url": settings.app_url.rstrip("/")}}]],
+                "resize_keyboard": True,
+                "is_persistent": True,
+            },
+        },
+        settings,
+    )
+    return {"ok": True}
 
 @app.post("/api/auth/telegram")
 def auth(p: AuthPayload, db: Session=Depends(get_session), s: Settings=Depends(get_settings)):

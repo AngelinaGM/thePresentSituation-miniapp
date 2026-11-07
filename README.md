@@ -6,7 +6,7 @@ FastAPI backend for anonymous gift reservations. The existing frontend remains i
 
 1. Install Python 3.11+ and PostgreSQL.
 2. Create a virtual environment, then run `pip install -r requirements.txt`.
-3. Copy `.env.example` to `.env` and set `DATABASE_URL`, `BOT_TOKEN`, `BOT_USERNAME`, `APP_URL`, and `SESSION_SECRET`.
+3. Copy `.env.example` to `.env` and set `DATABASE_URL`, `BOT_TOKEN`, `BOT_USERNAME`, `APP_URL`, `TELEGRAM_WEBHOOK_SECRET`, and `SESSION_SECRET`.
 4. Run `alembic upgrade head`.
 5. Start with `uvicorn app.main:app --reload --port 8000`.
 
@@ -14,7 +14,7 @@ Telegram Mini Apps require HTTPS; use an HTTPS tunnel for local testing.
 
 ## Railway
 
-Create and link a Railway PostgreSQL service (it supplies `DATABASE_URL`). Add `BOT_TOKEN`, `BOT_USERNAME`, `APP_URL`, and `SESSION_SECRET` as Railway variables. `railway.toml` runs `alembic upgrade head` before Uvicorn and checks `/health`. No deployment is performed automatically.
+Create and link a Railway PostgreSQL service (it supplies `DATABASE_URL`). Add `BOT_TOKEN`, `BOT_USERNAME`, `APP_URL`, `TELEGRAM_WEBHOOK_SECRET`, and `SESSION_SECRET` as Railway variables. `TELEGRAM_WEBHOOK_SECRET` must be a random URL-safe value; use the same value only in Railway, not in BotFather. On application start, the service registers `APP_URL/telegram/webhook` with Telegram. A private `/start` message receives a persistent “Open The Present Situation” Web App button. `railway.toml` runs `alembic upgrade head` before Uvicorn and checks `/health`. No deployment is performed automatically.
 
 ## Rules
 

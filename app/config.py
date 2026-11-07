@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     bot_token: str = ""
     bot_username: str = ""
     app_url: str = ""
+    telegram_webhook_secret: str = ""
     session_secret: str
     session_days: int = 7
 
