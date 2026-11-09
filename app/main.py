@@ -50,7 +50,7 @@ async def configure_telegram_webhook() -> None:
     await asyncio.to_thread(
         telegram_api,
         "setMyCommands",
-        {"commands": [{"command": "start", "description": "Open The Present Situation"}]},
+        {"commands": [{"command": "start", "description": "Open the app"}]},
         settings,
     )
 
@@ -142,9 +142,9 @@ async def telegram_webhook(
         "sendMessage",
         {
             "chat_id": chat["id"],
-            "text": "Welcome to The Present Situation.\n\nCreate a wishlist, add gifts, and share it with your guests.",
+            "text": "To continue, please open the PresentSituation app.",
             "reply_markup": {
-                "keyboard": [[{"text": "Open The Present Situation", "web_app": {"url": settings.app_url.rstrip("/")}}]],
+                "keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]],
                 "resize_keyboard": True,
                 "is_persistent": True,
             },
@@ -173,6 +173,15 @@ def add(wid:int,p: GiftPayload,u:User=Depends(current_user),db:Session=Depends(g
     if not w: fail(404, "Wishlist not found.")
     if w.status != WishlistStatus.ACTIVE: fail(409, "This wishlist cannot be changed.")
     g=Gift(wishlist_id=wid,title=p.title.strip(),product_url=str(p.url) if p.url else None,price_note=p.price,comment=p.note); db.add(g); db.commit(); db.refresh(g); return gift_out(g)
+@app.put("/api/gifts/{gid}")
+def edit(gid:int,p: GiftPayload,u:User=Depends(current_user),db:Session=Depends(get_session)):
+    g=db.scalar(select(Gift).where(Gift.id==gid).options(selectinload(Gift.wishlist)))
+    if not g or g.wishlist.owner_id != u.id or g.deleted_at is not None: fail(404, "Gift not found.")
+    if g.wishlist.status != WishlistStatus.ACTIVE: fail(409, "This wishlist cannot be changed.")
+    title = p.title.strip()
+    if not title: fail(400, "Enter a gift name.")
+    g.title, g.product_url, g.price_note, g.comment = title, str(p.url) if p.url else None, p.price, p.note
+    db.commit(); db.refresh(g); return gift_out(g)
 @app.delete("/api/gifts/{gid}",status_code=204)
 def remove(gid:int,u:User=Depends(current_user),db:Session=Depends(get_session)):
     g=db.scalar(select(Gift).where(Gift.id==gid).options(selectinload(Gift.wishlist)))

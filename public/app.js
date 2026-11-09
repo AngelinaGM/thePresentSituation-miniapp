@@ -23,6 +23,14 @@ function message(error) { root.insertAdjacentHTML('afterbegin', `<div class="not
 function giftCard(gift, action = '') {
   return `<article class="card gift"><div class="gift-main"><div class="gift-title">${escape(gift.title)}</div>${gift.price ? `<div class="meta">${escape(gift.price)}</div>` : ''}${gift.note ? `<div class="meta">${escape(gift.note)}</div>` : ''}${gift.url ? `<a class="link" href="${escape(gift.url)}" target="_blank" rel="noreferrer">Open link</a>` : ''}</div>${action}</article>`;
 }
+function giftForm(gift = {}, submitLabel = 'Add gift') {
+  return `<form id="gift-form" class="card"><input name="title" required maxlength="160" placeholder="Gift name" value="${escape(gift.title)}"><input name="url" type="url" placeholder="Product link (optional)" value="${escape(gift.url)}"><input name="price" maxlength="60" placeholder="Price or budget (optional)" value="${escape(gift.price)}"><textarea name="note" maxlength="500" placeholder="Note (optional)">${escape(gift.note)}</textarea><button>${submitLabel}</button></form>`;
+}
+function giftPayload(form) {
+  const payload = Object.fromEntries(new FormData(form));
+  Object.keys(payload).forEach(key => { if (!String(payload[key]).trim()) delete payload[key]; });
+  return payload;
+}
 
 async function renderHome() {
   const lists = await api('/api/wishlists/mine');
@@ -35,9 +43,12 @@ async function renderHome() {
   root.querySelectorAll('[data-open]').forEach(element => { element.onclick = () => { currentInvite = element.dataset.open; openInvite(); }; });
 }
 
-function renderOwner(list) {
+function renderOwner(list, editingGift = null) {
   const invite = list.inviteUrl;
-  root.innerHTML = `<button class="secondary" id="back">← My wishlists</button><h1>${escape(list.title)}</h1><p class="sub">Only you can see this view. Guest selections are intentionally hidden.</p><div class="card"><strong>Guest link</strong><p class="link">${escape(invite)}</p><button id="share">Share invite</button></div><h2>Add a gift</h2><form id="gift-form" class="card"><input name="title" required maxlength="160" placeholder="Gift name"><input name="url" type="url" placeholder="Product link (optional)"><input name="price" maxlength="60" placeholder="Price or budget (optional)"><textarea name="note" maxlength="500" placeholder="Note (optional)"></textarea><button>Add gift</button></form><h2>Gifts</h2>${list.gifts.length ? list.gifts.map(gift => giftCard(gift, `<button class="danger" data-delete="${gift.id}">Delete</button>`)).join('') : '<p class="empty">Add your first gift.</p>'}`;
+  const formTitle = editingGift ? 'Edit gift' : 'Add a gift';
+  const submitLabel = editingGift ? 'Save changes' : 'Add gift';
+  const cancelEdit = editingGift ? '<button class="secondary" id="cancel-edit" type="button">Cancel editing</button>' : '';
+  root.innerHTML = `<button class="secondary" id="back">← My wishlists</button><h1>${escape(list.title)}</h1><p class="sub">Only you can see this view. Guest selections are intentionally hidden.</p><div class="card"><strong>Guest link</strong><p class="link">${escape(invite)}</p><button id="share">Share invite</button></div><h2>${formTitle}</h2>${giftForm(editingGift || {}, submitLabel)}${cancelEdit}<h2>Gifts</h2>${list.gifts.length ? list.gifts.map(gift => giftCard(gift, `<button class="secondary" data-edit="${gift.id}">Edit</button><button class="danger" data-delete="${gift.id}">Delete</button>`)).join('') : '<p class="empty">Add your first gift.</p>'}`;
   document.querySelector('#back').onclick = renderHome;
   document.querySelector('#share').onclick = () => {
     if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(invite)}&text=${encodeURIComponent(`My wishlist: ${list.title}`)}`);
@@ -46,12 +57,14 @@ function renderOwner(list) {
   document.querySelector('#gift-form').onsubmit = async event => {
     event.preventDefault();
     try {
-      const payload = Object.fromEntries(new FormData(event.target));
-      Object.keys(payload).forEach(key => { if (!String(payload[key]).trim()) delete payload[key]; });
-      await api(`/api/wishlists/${list.id}/gifts`, { method: 'POST', body: JSON.stringify(payload) });
+      const url = editingGift ? `/api/gifts/${editingGift.id}` : `/api/wishlists/${list.id}/gifts`;
+      const method = editingGift ? 'PUT' : 'POST';
+      await api(url, { method, body: JSON.stringify(giftPayload(event.target)) });
       openInvite();
     } catch (error) { message(error); }
   };
+  document.querySelector('#cancel-edit')?.addEventListener('click', () => renderOwner(list));
+  root.querySelectorAll('[data-edit]').forEach(element => { element.onclick = () => renderOwner(list, list.gifts.find(gift => gift.id === Number(element.dataset.edit))); });
   root.querySelectorAll('[data-delete]').forEach(element => { element.onclick = async () => { try { await api(`/api/gifts/${element.dataset.delete}`, { method: 'DELETE' }); openInvite(); } catch (error) { message(error); } }; });
 }
 
