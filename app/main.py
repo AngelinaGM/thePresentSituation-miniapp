@@ -31,6 +31,12 @@ def frontend_asset_version() -> str:
 ASSET_VERSION = frontend_asset_version()
 
 
+def mini_app_url(settings: Settings) -> str:
+    base_url = settings.app_url.rstrip("/")
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}v={ASSET_VERSION}"
+
+
 def telegram_api(method: str, payload: dict, settings: Settings) -> None:
     request = UrlRequest(
         f"https://api.telegram.org/bot{settings.bot_token}/{method}",
@@ -134,7 +140,7 @@ async def send_bot_message(chat_id: int, text: str, settings: Settings, include_
     payload = {"chat_id": chat_id, "text": text}
     if include_open_button:
         payload["reply_markup"] = {
-            "inline_keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]]
+            "inline_keyboard": [[{"text": "Open", "web_app": {"url": mini_app_url(settings)}}]]
         }
     await asyncio.to_thread(telegram_api, "sendMessage", payload, settings)
 
