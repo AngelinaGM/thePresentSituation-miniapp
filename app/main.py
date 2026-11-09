@@ -154,9 +154,7 @@ async def telegram_webhook(
             "chat_id": chat["id"],
             "text": "To continue, please open the PresentSituation app.",
             "reply_markup": {
-                "keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]],
-                "resize_keyboard": True,
-                "is_persistent": True,
+                "inline_keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]],
             },
         },
         settings,
