@@ -60,7 +60,12 @@ async def configure_telegram_webhook() -> None:
     await asyncio.to_thread(
         telegram_api,
         "setMyCommands",
-        {"commands": [{"command": "start", "description": "Open the app"}]},
+        {
+            "commands": [
+                {"command": "start", "description": "Open the app"},
+                {"command": "help", "description": "Learn about the app"},
+            ]
+        },
         settings,
     )
 
@@ -125,6 +130,14 @@ def owner_out(w, s):
     bot=s.bot_username.removeprefix("@")
     return {"id":w.id,"title":w.title,"status":w.status.value,"partyAt":w.party_at.isoformat() if w.party_at else None,"inviteToken":w.invite_token,"inviteUrl":f"https://t.me/{bot}?startapp={w.invite_token}" if bot else "","gifts":[gift_out(g) for g in w.gifts if not g.deleted_at]}
 
+async def send_bot_message(chat_id: int, text: str, settings: Settings, include_open_button: bool = False) -> None:
+    payload = {"chat_id": chat_id, "text": text}
+    if include_open_button:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]]
+        }
+    await asyncio.to_thread(telegram_api, "sendMessage", payload, settings)
+
 @app.post("/telegram/webhook", include_in_schema=False)
 async def telegram_webhook(
     request: Request,
@@ -145,20 +158,29 @@ async def telegram_webhook(
     chat = message.get("chat") if isinstance(message, dict) else None
     text = message.get("text", "") if isinstance(message, dict) else ""
     command = text.strip().split(maxsplit=1)[0].split("@", 1)[0] if text else ""
-    if command != "/start" or not isinstance(chat, dict) or chat.get("type") != "private":
+    if not isinstance(chat, dict) or chat.get("type") != "private":
         return {"ok": True}
-    await asyncio.to_thread(
-        telegram_api,
-        "sendMessage",
-        {
-            "chat_id": chat["id"],
-            "text": "To continue, please open the PresentSituation app.",
-            "reply_markup": {
-                "inline_keyboard": [[{"text": "Open", "web_app": {"url": settings.app_url.rstrip("/")}}]],
-            },
-        },
-        settings,
-    )
+    if command == "/start":
+        await send_bot_message(
+            chat["id"],
+            "To continue, please open the PresentSituation app.",
+            settings,
+            include_open_button=True,
+        )
+    elif command == "/help":
+        await send_bot_message(
+            chat["id"],
+            "The Present Situation - a Telegram Mini App to create wish-lists, share them with friends, and make every occasion a little more special.",
+            settings,
+            include_open_button=True,
+        )
+    elif command.startswith("/"):
+        await send_bot_message(
+            chat["id"],
+            "Sorry, this command is unknown.\n\nAvailable commands:\n/start - Open the app\n/help - Learn about the app",
+            settings,
+            include_open_button=True,
+        )
     return {"ok": True}
 
 @app.post("/api/auth/telegram")
