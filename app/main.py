@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl
 from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import select
@@ -19,6 +19,16 @@ from app.models import Gift, Reservation, User, Wishlist, WishlistStatus
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
 logger = logging.getLogger(__name__)
+
+
+def frontend_asset_version() -> str:
+    digest = hashlib.sha256()
+    for asset_name in ("app.js", "style.css"):
+        digest.update((PUBLIC / asset_name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
+ASSET_VERSION = frontend_asset_version()
 
 
 def telegram_api(method: str, payload: dict, settings: Settings) -> None:
@@ -214,7 +224,12 @@ def old_unreserve(gid:int,u:User=Depends(current_user),db:Session=Depends(get_se
 @app.get("/health")
 def health(): return {"ok":True}
 @app.get("/")
-def index(): return FileResponse(PUBLIC/"index.html")
+def index():
+    html = (PUBLIC / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        html.replace("__ASSET_VERSION__", ASSET_VERSION),
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 # Keep this mount last: FastAPI resolves the API and health routes above first,
 # while the browser can load the existing root-relative /app.js and /style.css.

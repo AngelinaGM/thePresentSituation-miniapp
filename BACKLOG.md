@@ -2,7 +2,9 @@
 
 ## Frontend delivery
 
-- Decide whether static frontend assets should use content-hashed filenames or explicit version query parameters, and define the accompanying cache-control policy for Telegram WebView.
+- ~~Decide whether static frontend assets should use content-hashed filenames or explicit version query parameters, and define the accompanying cache-control policy for Telegram WebView.~~
+
+  - 9/11: added content-hashed filenames
 
 ## Localization
 
