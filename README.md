@@ -22,4 +22,5 @@ Create and link a Railway PostgreSQL service (it supplies `DATABASE_URL`). Add `
 - A database-level unique `reservations.gift_id` prevents double booking.
 - Owners cannot reserve their own gifts; guests can cancel only their own reservation.
 - Owner responses never expose reservation state, availability, or guest identity.
+- Opening an invite saves the wishlist in the guest's “Shared with me” section; removing it only hides it for that guest.
 - `status` and `party_at` are included; future X/Y time limits are deliberately not implemented yet.

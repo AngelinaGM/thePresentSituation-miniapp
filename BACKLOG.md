@@ -19,7 +19,7 @@
 
 ## Shared wishlists
 
-- Design the experience for users who both own wishlists and open wishlists shared by other people.
-- Add a clear “Home” or “My wishlists” action from a shared wishlist.
-- Add a “Shared with me” section to the home screen for wishlists the user has opened through an invite link.
-- Define whether opening an invite automatically saves it to “Shared with me” and how a user can remove it from that section.
+- ~~Design the experience for users who both own wishlists and open wishlists shared by other people.~~
+- ~~Add a clear “Home” or “My wishlists” action from a shared wishlist.~~
+- ~~Add a “Shared with me” section to the home screen for wishlists the user has opened through an invite link.~~
+- ~~Save a wishlist automatically after its first successful invite opening and allow a user to remove it from “Shared with me”.~~

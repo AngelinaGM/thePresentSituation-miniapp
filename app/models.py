@@ -28,6 +28,7 @@ class User(Base):
 
     wishlists: Mapped[list[Wishlist]] = relationship(back_populates="owner")
     reservations: Mapped[list[Reservation]] = relationship(back_populates="guest")
+    wishlist_memberships: Mapped[list[WishlistMembership]] = relationship(back_populates="user")
 
 
 class Wishlist(Base):
@@ -44,6 +45,7 @@ class Wishlist(Base):
 
     owner: Mapped[User] = relationship(back_populates="wishlists")
     gifts: Mapped[list[Gift]] = relationship(back_populates="wishlist")
+    memberships: Mapped[list[WishlistMembership]] = relationship(back_populates="wishlist")
 
 
 class Gift(Base):
@@ -73,3 +75,18 @@ class Reservation(Base):
 
     gift: Mapped[Gift] = relationship(back_populates="reservation")
     guest: Mapped[User] = relationship(back_populates="reservations")
+
+
+class WishlistMembership(Base):
+    __tablename__ = "wishlist_memberships"
+    __table_args__ = (UniqueConstraint("wishlist_id", "user_id", name="uq_wishlist_memberships_wishlist_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    wishlist_id: Mapped[int] = mapped_column(ForeignKey("wishlists.id", ondelete="RESTRICT"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    first_opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    wishlist: Mapped[Wishlist] = relationship(back_populates="memberships")
+    user: Mapped[User] = relationship(back_populates="wishlist_memberships")

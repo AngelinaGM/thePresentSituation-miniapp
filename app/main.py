@@ -2,7 +2,7 @@ import asyncio, base64, hashlib, hmac, json, logging, secrets, time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlencode
 from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
@@ -10,12 +10,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import Gift, Reservation, User, Wishlist, WishlistStatus
+from app.models import Gift, Reservation, User, Wishlist, WishlistMembership, WishlistStatus
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
 logger = logging.getLogger(__name__)
@@ -31,10 +32,13 @@ def frontend_asset_version() -> str:
 ASSET_VERSION = frontend_asset_version()
 
 
-def mini_app_url(settings: Settings) -> str:
+def mini_app_url(settings: Settings, startapp: str | None = None) -> str:
     base_url = settings.app_url.rstrip("/")
     separator = "&" if "?" in base_url else "?"
-    return f"{base_url}{separator}v={ASSET_VERSION}"
+    parameters = {"v": ASSET_VERSION}
+    if startapp:
+        parameters["startapp"] = startapp
+    return f"{base_url}{separator}{urlencode(parameters)}"
 
 
 def telegram_api(method: str, payload: dict, settings: Settings) -> None:
@@ -136,11 +140,53 @@ def owner_out(w, s):
     bot=s.bot_username.removeprefix("@")
     return {"id":w.id,"title":w.title,"status":w.status.value,"partyAt":w.party_at.isoformat() if w.party_at else None,"inviteToken":w.invite_token,"inviteUrl":f"https://t.me/{bot}?startapp={w.invite_token}" if bot else "","gifts":[gift_out(g) for g in w.gifts if not g.deleted_at]}
 
-async def send_bot_message(chat_id: int, text: str, settings: Settings, include_open_button: bool = False) -> None:
+def guest_out(w, user):
+    gifts = [
+        gift_out(gift, gift.reservation is not None and gift.reservation.guest_id == user.id)
+        for gift in w.gifts
+        if gift.deleted_at is None and (gift.reservation is None or gift.reservation.guest_id == user.id)
+    ]
+    return {
+        "id": w.id,
+        "title": w.title,
+        "status": w.status.value,
+        "partyAt": w.party_at.isoformat() if w.party_at else None,
+        "gifts": gifts,
+    }
+
+def shared_out(w):
+    return {
+        "id": w.id,
+        "title": w.title,
+        "status": w.status.value,
+        "partyAt": w.party_at.isoformat() if w.party_at else None,
+    }
+
+def save_membership(wishlist_id: int, user_id: int, db: Session) -> None:
+    now = datetime.now(timezone.utc)
+    statement = insert(WishlistMembership).values(
+        wishlist_id=wishlist_id,
+        user_id=user_id,
+        last_opened_at=now,
+        hidden_at=None,
+    ).on_conflict_do_update(
+        constraint="uq_wishlist_memberships_wishlist_user",
+        set_={"last_opened_at": now, "hidden_at": None},
+    )
+    db.execute(statement)
+    db.commit()
+
+async def send_bot_message(
+    chat_id: int,
+    text: str,
+    settings: Settings,
+    include_open_button: bool = False,
+    startapp: str | None = None,
+) -> None:
     payload = {"chat_id": chat_id, "text": text}
     if include_open_button:
         payload["reply_markup"] = {
-            "inline_keyboard": [[{"text": "Open", "web_app": {"url": mini_app_url(settings)}}]]
+            "inline_keyboard": [[{"text": "Open", "web_app": {"url": mini_app_url(settings, startapp)}}]]
         }
     await asyncio.to_thread(telegram_api, "sendMessage", payload, settings)
 
@@ -164,6 +210,7 @@ async def telegram_webhook(
     chat = message.get("chat") if isinstance(message, dict) else None
     text = message.get("text", "") if isinstance(message, dict) else ""
     command = text.strip().split(maxsplit=1)[0].split("@", 1)[0] if text else ""
+    startapp = text.strip().split(maxsplit=1)[1] if command == "/start" and len(text.strip().split(maxsplit=1)) == 2 else None
     if not isinstance(chat, dict) or chat.get("type") != "private":
         return {"ok": True}
     if command == "/start":
@@ -172,6 +219,7 @@ async def telegram_webhook(
             "To continue, please open the PresentSituation app.",
             settings,
             include_open_button=True,
+            startapp=startapp,
         )
     elif command == "/help":
         await send_bot_message(
@@ -198,6 +246,37 @@ def auth(p: AuthPayload, db: Session=Depends(get_session), s: Settings=Depends(g
 @app.get("/api/wishlists/mine")
 def mine(u: User=Depends(current_user),db: Session=Depends(get_session),s: Settings=Depends(get_settings)):
     return [owner_out(w,s) for w in db.scalars(select(Wishlist).where(Wishlist.owner_id==u.id).options(selectinload(Wishlist.gifts))).all()]
+@app.get("/api/wishlists/shared")
+def shared_wishlists(u: User=Depends(current_user), db: Session=Depends(get_session)):
+    rows = db.execute(
+        select(Wishlist)
+        .join(WishlistMembership, WishlistMembership.wishlist_id == Wishlist.id)
+        .where(WishlistMembership.user_id == u.id, WishlistMembership.hidden_at.is_(None))
+        .order_by(WishlistMembership.last_opened_at.desc())
+    ).scalars().all()
+    return [shared_out(wishlist) for wishlist in rows]
+@app.get("/api/wishlists/shared/{wid}")
+def open_shared_wishlist(wid: int, u: User=Depends(current_user), db: Session=Depends(get_session)):
+    wishlist = db.scalar(
+        select(Wishlist)
+        .join(WishlistMembership, WishlistMembership.wishlist_id == Wishlist.id)
+        .where(Wishlist.id == wid, WishlistMembership.user_id == u.id, WishlistMembership.hidden_at.is_(None))
+        .options(selectinload(Wishlist.gifts).selectinload(Gift.reservation))
+    )
+    if wishlist is None: fail(404, "Shared wishlist not found.")
+    return {"isOwner": False, "list": guest_out(wishlist, u)}
+@app.delete("/api/wishlists/shared/{wid}", status_code=204)
+def hide_shared_wishlist(wid: int, u: User=Depends(current_user), db: Session=Depends(get_session)):
+    membership = db.scalar(
+        select(WishlistMembership).where(
+            WishlistMembership.wishlist_id == wid,
+            WishlistMembership.user_id == u.id,
+            WishlistMembership.hidden_at.is_(None),
+        )
+    )
+    if membership is None: fail(404, "Shared wishlist not found.")
+    membership.hidden_at = datetime.now(timezone.utc)
+    db.commit()
 @app.post("/api/wishlists",status_code=201)
 def create(p: WishlistPayload,u: User=Depends(current_user),db: Session=Depends(get_session),s: Settings=Depends(get_settings)):
     w=Wishlist(owner_id=u.id,title=p.title.strip(),party_at=p.party_at,invite_token=secrets.token_urlsafe(24));
@@ -229,8 +308,8 @@ def invite(token:str,u:User=Depends(current_user),db:Session=Depends(get_session
     w=db.scalar(select(Wishlist).where(Wishlist.invite_token==token).options(selectinload(Wishlist.gifts).selectinload(Gift.reservation)))
     if not w: fail(404, "Invite not found.")
     if w.owner_id==u.id: return {"isOwner":True,"list":owner_out(w,s)}
-    gifts=[gift_out(g,g.reservation is not None and g.reservation.guest_id==u.id) for g in w.gifts if not g.deleted_at and (not g.reservation or g.reservation.guest_id==u.id)]
-    return {"isOwner":False,"list":{"id":w.id,"title":w.title,"status":w.status.value,"partyAt":w.party_at.isoformat() if w.party_at else None,"gifts":gifts}}
+    save_membership(w.id, u.id, db)
+    return {"isOwner":False,"list":guest_out(w, u)}
 @app.post("/api/gifts/{gid}/reserve",status_code=201)
 def reserve(gid:int,u:User=Depends(current_user),db:Session=Depends(get_session)):
     g=db.scalar(select(Gift).where(Gift.id==gid).options(selectinload(Gift.wishlist)))
